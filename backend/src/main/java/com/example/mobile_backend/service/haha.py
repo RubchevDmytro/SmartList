@@ -2,9 +2,17 @@ import asyncio
 from playwright.async_api import async_playwright
 import requests
 import json
-from googletrans import Translator   # добавляем переводчик
-
+from googletrans import Translator
+import time
 translator = Translator()
+
+async def send_batch(products, spring_url):
+    try:
+        response = requests.post(spring_url, json=products)
+        response.raise_for_status()
+        print(f"[INFO] Успешно отправлена партия из {len(products)} товаров на Spring Boot: {response.json()}")
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Ошибка при отправке партии на Spring Boot: {e}")
 
 async def scrape_lidl_zlavy(url: str):
     print("[INFO] Запускаем playwright...")
@@ -74,6 +82,8 @@ async def scrape_lidl_zlavy(url: str):
         print(f"[INFO] Финальное количество товаров: {len(product_links)}")
 
         products = []
+        batch_size = 4
+        spring_url = "http://localhost:8080/api/lists/prices/update"
 
         for idx, item in enumerate(product_links, start=1):
             print(f"[DEBUG] Обрабатываем товар #{idx}")
@@ -102,21 +112,22 @@ async def scrape_lidl_zlavy(url: str):
             else:
                 print(f"[WARN] Пропущен товар #{idx} — нет данных.")
 
+            # Отправляем данные партиями по 4
+            if len(products) >= batch_size:
+                await send_batch(products[:batch_size], spring_url)
+                products = products[batch_size:]
+
+        # Отправляем оставшиеся продукты, если они есть
+        if products:
+            await send_batch(products, spring_url)
+
         await browser.close()
         print("[INFO] Браузер закрыт.")
-
-        # Отправляем данные на Spring Boot
-        spring_url = "http://localhost:8080/api/lists/prices/update"
-        try:
-            response = requests.post(spring_url, json=products)
-            response.raise_for_status()
-            print("[INFO] Данные успешно отправлены на Spring Boot:", response.json())
-        except requests.exceptions.RequestException as e:
-            print(f"[ERROR] Ошибка при отправке данных на Spring Boot: {e}")
 
         return json.dumps(products, ensure_ascii=False)
 
 if __name__ == "__main__":
+    time.sleep(5)
     url = "https://www.lidl.sk/c/jedlo-a-napoje/s10068374?offset=85"
     print("[INFO] Запуск парсинга...")
     results = asyncio.run(scrape_lidl_zlavy(url))

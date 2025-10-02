@@ -56,7 +56,7 @@ function App() {
       return;
     }
     try {
-      const response = await axios.post("http://localhost:8080/api/lists", { name: newListName });
+      const response = await axios.post("http://localhost:8080/api/lists", { name: newListName, items: [] });
       setLists([...lists, response.data]);
       setNewListName("");
       setError(null);
@@ -65,16 +65,43 @@ function App() {
     }
   };
 
+  // Получить цену для элемента из базы данных
+  const fetchPriceForItem = async (itemName) => {
+    if (!position) {
+      return { price: 0, store: "" };
+    }
+    try {
+      const response = await axios.get(
+        `http://localhost:8080/api/lists/prices/${encodeURIComponent(itemName)}?lat=${position.lat}&lon=${position.lon}`
+      );
+      if (response.data.error) {
+        return { price: 0, store: "" };
+      }
+      const prices = response.data.prices;
+      const cheapestStore = response.data.cheapest;
+      const price = prices[cheapestStore] || 0;
+      return { price, store: cheapestStore || "" };
+    } catch (err) {
+      console.error(`Error fetching price for ${itemName}:`, err);
+      return { price: 0, store: "" };
+    }
+  };
+
   // Добавить элемент
   const addItem = async (listId) => {
     if (!newItemName.trim()) {
-      setError("Názov položky nemôže byť prázdny.");
+      setError("Názov položky nemôže byť prázдный.");
       return;
     }
     try {
-      const list = lists.find(l => l.id === listId);
-      const updatedItems = [...list.items, { name: newItemName, bought: false, price: 0, store: "" }];
-      await axios.put(`http://localhost:8080/api/lists/${listId}`, { name: list.name, items: updatedItems });
+      const list = lists.find((l) => l.id === listId);
+      const { price, store } = await fetchPriceForItem(newItemName);
+      const updatedItems = [...list.items, { name: newItemName, bought: false, price, store }];
+
+      await axios.put(`http://localhost:8080/api/lists/${listId}`, {
+        name: list.name,
+        items: updatedItems,
+      });
       setNewItemName("");
       setError(null);
       const response = await axios.get("http://localhost:8080/api/lists");
@@ -83,6 +110,26 @@ function App() {
       setAllProducts(productsResponse.data);
     } catch (err) {
       setError("Nepodarilo sa pridať položku.");
+    }
+  };
+
+  // Удалить элемент
+  const deleteItem = async (listId, itemId) => {
+    try {
+      const list = lists.find((l) => l.id === listId);
+      const updatedItems = list.items.filter((item) => item.id !== itemId);
+
+      await axios.put(`http://localhost:8080/api/lists/${listId}`, {
+        name: list.name,
+        items: updatedItems,
+      });
+      setError(null);
+      const response = await axios.get("http://localhost:8080/api/lists");
+      setLists(response.data);
+      const productsResponse = await axios.get("http://localhost:8080/api/lists/products");
+      setAllProducts(productsResponse.data);
+    } catch (err) {
+      setError("Nepodarilo sa odstrániť položku.");
     }
   };
 
@@ -106,7 +153,9 @@ function App() {
       return;
     }
     try {
-      const response = await axios.get(`http://localhost:8080/api/lists/prices/${encodeURIComponent(itemName)}?lat=${position.lat}&lon=${position.lon}`);
+      const response = await axios.get(
+        `http://localhost:8080/api/lists/prices/${encodeURIComponent(itemName)}?lat=${position.lat}&lon=${position.lon}`
+      );
       setPrices(response.data);
       setError(null);
     } catch (err) {
@@ -147,7 +196,7 @@ function App() {
         {lists.length === 0 ? (
           <p>Žiadne zoznamy. Vytvorte nový!</p>
         ) : (
-          lists.map(list => (
+          lists.map((list) => (
             <div key={list.id} className="list-card">
               <h2>{list.name}</h2>
               <div className="add-item-form">
@@ -160,16 +209,19 @@ function App() {
                 <button onClick={() => addItem(list.id)}>Pridať</button>
               </div>
               <ul>
-                {list.items.map(item => (
+                {list.items.map((item) => (
                   <li key={item.id} className="item">
                     <span>
                       {item.name}
-                      {item.price > 0 && item.store ? ` - ${item.price.toFixed(2)} € (${item.store})` : " - Cena neznáma"}
+                      {item.price > 0 && item.store
+                        ? ` - ${item.price.toFixed(2)} € (${item.store})`
+                        : " - Cena neznáma"}
                       {item.bought ? " ✅" : " ❌"}
                     </span>
                     <div>
                       <button onClick={() => toggleItem(list.id, item.id)}>Toggle</button>
                       <button onClick={() => getPricesForItem(item.name)}>Ceny</button>
+                      <button onClick={() => deleteItem(list.id, item.id)}>Odstrániť</button>
                     </div>
                   </li>
                 ))}
@@ -186,8 +238,10 @@ function App() {
           <p>Žiadne populárne položky.</p>
         ) : (
           <ul>
-            {popularItems.map(item => (
-              <li key={item.name}>{item.name} (objavené {item.count}x)</li>
+            {popularItems.map((item) => (
+              <li key={item.name}>
+                {item.name} (objavené {item.count}x)
+              </li>
             ))}
           </ul>
         )}
@@ -199,10 +253,14 @@ function App() {
           <h2>Ceny pre {prices.item}</h2>
           <ul>
             {Object.entries(prices.prices).map(([store, price]) => (
-              <li key={store}>{store}: {price.toFixed(2)} €</li>
+              <li key={store}>
+                {store}: {price.toFixed(2)} €
+              </li>
             ))}
           </ul>
-          <p>Najlacnejšie: {prices.cheapest} (blízko: {prices.location})</p>
+          <p>
+            Najlacnejšie: {prices.cheapest} (blízko: {prices.location})
+          </p>
         </div>
       )}
 
@@ -215,10 +273,12 @@ function App() {
               <p>Žiadne produkty.</p>
             ) : (
               <ul>
-                {allProducts.map(product => (
+                {allProducts.map((product) => (
                   <li key={product.id}>
                     {product.name}
-                    {product.price > 0 && product.store ? ` - ${product.price.toFixed(2)} € (${product.store})` : " - Cena neznáma"}
+                    {product.price > 0 && product.store
+                      ? ` - ${product.price.toFixed(2)} € (${product.store})`
+                      : " - Cena neznáma"}
                   </li>
                 ))}
               </ul>
@@ -229,7 +289,7 @@ function App() {
       )}
 
       <p className="note">
-        Poznámka: Použi GPS pre blízke obchody. Integruj Google Shopping API pre reálne ceny.
+        Poznámka: Použi GPS pre blízke obchody. Integruj Google Shopping API pre reálne цены.
       </p>
     </div>
   );

@@ -134,36 +134,49 @@ public class ShoppingController {
             return ResponseEntity.badRequest().body(Map.of("error", "Failed to update prices: " + e.getMessage()));
         }
     }
+@GetMapping("/prices/{itemName}")
+public Map<String, Object> getPrices(@PathVariable String itemName, @RequestParam double lat, @RequestParam double lon) {
+    Map<String, Object> response = new HashMap<>();
+    Map<String, Double> prices = new HashMap<>();
+    String cheapestStore = null;
+    double minPrice = Double.MAX_VALUE;
 
-    @GetMapping("/prices/{itemName}")
-    public Map<String, Object> getPrices(@PathVariable String itemName, @RequestParam double lat, @RequestParam double lon) {
-        Map<String, Object> response = new HashMap<>();
-        Map<String, Double> prices = new HashMap<>();
-        String cheapestStore = null;
-        double minPrice = Double.MAX_VALUE;
-
-        for (ProductPriceDTO product : parsedPrices) {
-            if (product.getName().equalsIgnoreCase(itemName)) {
-                double price = Double.parseDouble(product.getPrice());
-                prices.put(product.getStore(), price);
-                if (price < minPrice) {
-                    minPrice = price;
-                    cheapestStore = product.getStore();
+    // Поиск в базе данных
+    List<ShoppingList> lists = repository.findAll();
+    for (ShoppingList list : lists) {
+        for (Item item : list.getItems()) {
+            if (item.getName().equalsIgnoreCase(itemName) && item.getPrice() > 0 && item.getStore() != null) {
+                prices.put(item.getStore(), item.getPrice());
+                if (item.getPrice() < minPrice) {
+                    minPrice = item.getPrice();
+                    cheapestStore = item.getStore();
                 }
             }
         }
+    }
 
-        if (prices.isEmpty()) {
-            prices.put("Lidl", 0.80);
-            prices.put("Kaufland", 0.85);
-            prices.put("Tesco", 0.90);
-            cheapestStore = "Lidl";
+    // Если в базе данных ничего не найдено, можно использовать parsedPrices как запасной вариант
+    for (ProductPriceDTO product : parsedPrices) {
+        if (product.getName().equalsIgnoreCase(itemName)) {
+            double price = Double.parseDouble(product.getPrice());
+            prices.putIfAbsent(product.getStore(), price); // Добавляем только, если магазин ещё не добавлен
+            if (price < minPrice) {
+                minPrice = price;
+                cheapestStore = product.getStore();
+            }
         }
+    }
 
-        response.put("item", itemName);
-        response.put("prices", prices);
-        response.put("cheapest", cheapestStore);
-        response.put("location", "Nearest stores via lat/lon: " + lat + "," + lon);
+    // Если ничего не найдено, возвращаем сообщение об ошибке или пустой результат
+    if (prices.isEmpty()) {
+        response.put("error", "No prices found for item: " + itemName);
         return response;
     }
+
+    response.put("item", itemName);
+    response.put("prices", prices);
+    response.put("cheapest", cheapestStore);
+    response.put("location", "Nearest stores via lat/lon: " + lat + "," + lon);
+    return response;
+}
 }

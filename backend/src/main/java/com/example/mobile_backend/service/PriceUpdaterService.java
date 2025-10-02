@@ -2,15 +2,17 @@ package com.example.mobile_backend.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import jakarta.annotation.PostConstruct;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Arrays;
+
 @Component
 public class PriceUpdaterService {
     private static final Logger logger = LoggerFactory.getLogger(PriceUpdaterService.class);
@@ -21,16 +23,20 @@ public class PriceUpdaterService {
         runPythonScript();
     }
 
-//    @PostConstruct
-//    public void runOnStartup() {
-  //      logger.info("Running price update on application startup...");
-    //    runPythonScript();
-    //}
+    @EventListener(ApplicationReadyEvent.class)
+    public void runOnStartup() {
+        logger.info("Running price update after application is ready...");
+        runPythonScript();
+    }
 
     private void runPythonScript() {
         logger.info("Starting price update from Python parser...");
+
         try {
-            String pythonScriptPath = "/Users/dimarubchev/Desktop/mobile-backend/src/main/java/com/example/mobile_backend/service/haha.py";
+            // Убрана фиксированная задержка, так как событие гарантирует готовность
+            // Thread.sleep(3000); // Можно оставить, если хотите дополнительную паузу, но не рекомендуется
+
+            String pythonScriptPath = "/Users/dimarubchev/Desktop/SmartList/backend/src/main/java/com/example/mobile_backend/service/haha.py";
             ProcessBuilder processBuilder = new ProcessBuilder(Arrays.asList("python3", pythonScriptPath));
 
             Process process = processBuilder.start();
@@ -54,7 +60,7 @@ public class PriceUpdaterService {
             }
         } catch (IOException | InterruptedException e) {
             logger.error("Error executing Python script: {}", e.getMessage(), e);
+            Thread.currentThread().interrupt(); // хорошая практика при InterruptedException
         }
     }
 }
-
